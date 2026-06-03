@@ -161,6 +161,19 @@ python app/seed.py    # Postgres required — MIT labs + demo students
 python run.py         # http://localhost:8000/docs
 ```
 
+### Frontend — Shared Note UI
+
+```bash
+cd frontend && npm install && npm run dev   # http://localhost:3000
+```
+
+Runs on mock fixtures today (no backend needed). Demo note URLs:
+
+- Aisha (`AMBIGUOUS` → agents → `MATCH`): `/note/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222`
+- Marcus (`CLEAR_MISMATCH`, agents skipped): `/note/33333333-3333-3333-3333-333333333333/44444444-4444-4444-4444-444444444444`
+
+To run on live data, `POST /negotiate` must return the full `SharedNotePayload` (`{ student, project, dossier, result }`) — see Roadmap.
+
 ---
 
 ## API
@@ -190,7 +203,7 @@ python run.py         # http://localhost:8000/docs
 ## Project structure
 
 ```
-app/
+app/                     # Backend (FastAPI + agents)
 ├── models.py            # StudentProfile, LabProject, Dossier, AgentMessage
 ├── agents/
 │   ├── fit.py           # evaluate_fit() — deterministic dossier + routing
@@ -205,6 +218,14 @@ app/
 ├── seed.py
 └── scraper.py
 demo.py · run.py
+
+frontend/                # Shared Note UI (Next.js 15 + TS + Tailwind)
+├── src/app/             # Routes: Home, onboarding flow, /note/[studentId]/[projectId]
+├── src/components/      # shared-note/, discovery/, onboarding/
+└── src/lib/
+    ├── types.ts         # Mirrors app/models.py (Dossier, SharedNotePayload)
+    ├── viewModel.ts     # Routing/decision → human copy (no enums in UI)
+    └── mock/notes.ts    # Demo fixtures (Aisha / Marcus) until API returns dossier
 ```
 
 ---
