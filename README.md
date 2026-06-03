@@ -167,12 +167,12 @@ python run.py         # http://localhost:8000/docs
 cd frontend && npm install && npm run dev   # http://localhost:3000
 ```
 
-Runs on mock fixtures today (no backend needed). Demo note URLs:
+Runs on mock fixtures out of the box (no backend needed). Demo note URLs:
 
 - Aisha (`AMBIGUOUS` → agents → `MATCH`): `/note/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222`
 - Marcus (`CLEAR_MISMATCH`, agents skipped): `/note/33333333-3333-3333-3333-333333333333/44444444-4444-4444-4444-444444444444`
 
-To run on live data, `POST /negotiate` must return the full `SharedNotePayload` (`{ student, project, dossier, result }`) — see Roadmap.
+For live data, `POST /negotiate` returns the full `SharedNotePayload` (`{ student, project, dossier, result }`) — swap `getMockNote` for a fetch against the API.
 
 ---
 
@@ -186,7 +186,7 @@ To run on live data, `POST /negotiate` must return the full `SharedNotePayload` 
 | POST | `/students` | Create student profile |
 | GET | `/projects` | List lab projects |
 | GET | `/projects/{project_id}` | Get one project |
-| POST | `/negotiate?student_id=&project_id=` | Dossier pre-screen + negotiation; saves log |
+| POST | `/negotiate?student_id=&project_id=` | Dossier pre-screen + negotiation; saves log. Returns full `SharedNotePayload` (`{ student, project, dossier, result }`) for the UI |
 | GET | `/negotiations` | List past runs (summary) |
 
 ---
@@ -268,7 +268,8 @@ Built together for **NY Tech Week — AI Agents: From Prototype to Production** 
 
 ## Roadmap
 
-- Return dossier on `/negotiate` JSON response  
+- ~~Return dossier on `/negotiate` JSON response~~ ✅ done — returns full `SharedNotePayload`
+- Wire frontend fetch layer to `/negotiate` (replace `getMockNote`)
 - Proactive surfacing (discovery before search)  
 - Rich intake flow and optional PI constraints (opt-in; not GPA-first by default)  
 

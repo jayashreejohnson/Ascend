@@ -25,8 +25,15 @@ from app.models import (
 )
 
 
-def run_negotiation(student: StudentProfile, project: LabProject) -> NegotiationResult:
-    """Run the dossier pre-screen then (if AMBIGUOUS) the 3-agent negotiation."""
+def run_negotiation(
+    student: StudentProfile, project: LabProject
+) -> tuple[Dossier, NegotiationResult]:
+    """Run the dossier pre-screen then (if AMBIGUOUS) the 3-agent negotiation.
+
+    Returns:
+        (dossier, result) — the dossier is always returned so callers can build
+        the SharedNotePayload { student, project, dossier, result } for the UI.
+    """
 
     # --- Step 1: Build the dossier ---
     dossier: Dossier = evaluate_fit(student, project, [])
@@ -34,7 +41,7 @@ def run_negotiation(student: StudentProfile, project: LabProject) -> Negotiation
 
     # --- Step 2: Short-circuit on CLEAR paths ---
     if dossier.routing == DossierRouting.CLEAR_FIT:
-        return NegotiationResult(
+        return dossier, NegotiationResult(
             decision=NegotiationDecision.MATCH,
             justification=f"[CLEAR_FIT — no negotiation needed]\n{dossier.summary}",
             turns_used=0,
@@ -44,7 +51,7 @@ def run_negotiation(student: StudentProfile, project: LabProject) -> Negotiation
         )
 
     if dossier.routing == DossierRouting.CLEAR_MISMATCH:
-        return NegotiationResult(
+        return dossier, NegotiationResult(
             decision=NegotiationDecision.NO_MATCH,
             justification=f"[CLEAR_MISMATCH — no negotiation needed]\n{dossier.summary}",
             turns_used=0,
@@ -83,7 +90,7 @@ def run_negotiation(student: StudentProfile, project: LabProject) -> Negotiation
         _print_turn(mediator_msg)
 
         if decision != NegotiationDecision.NEEDS_INFO or at_cap:
-            return NegotiationResult(
+            return dossier, NegotiationResult(
                 decision=decision,
                 justification=mediator_msg.payload,
                 turns_used=turn,
@@ -103,7 +110,7 @@ def run_negotiation(student: StudentProfile, project: LabProject) -> Negotiation
         student, project, history, turn + 1, force_terminal=True, dossier=dossier
     )
     history.append(mediator_msg)
-    return NegotiationResult(
+    return dossier, NegotiationResult(
         decision=decision,
         justification=mediator_msg.payload,
         turns_used=turn,
@@ -114,9 +121,9 @@ def run_negotiation(student: StudentProfile, project: LabProject) -> Negotiation
 
 
 def _print_dossier(dossier: Dossier) -> None:
-    bar = "═" * 60
+    bar = "=" * 60
     print(f"\n{bar}")
-    print(f"  DOSSIER  →  routing: {dossier.routing.value}  |  confidence: {dossier.overall_confidence:.2f}")
+    print(f"  DOSSIER  ->  routing: {dossier.routing.value}  |  confidence: {dossier.overall_confidence:.2f}")
     print(bar)
     if dossier.summary:
         print(dossier.summary)
@@ -135,7 +142,7 @@ def _print_dossier(dossier: Dossier) -> None:
 
 
 def _print_turn(msg: AgentMessage) -> None:
-    bar = "─" * 60
+    bar = "-" * 60
     print(f"\n{bar}")
     print(f"  Turn {msg.turn} | {msg.from_agent.value.upper()} -> {msg.to_agent.value.upper()} [{msg.intent.value}]")
     print(bar)

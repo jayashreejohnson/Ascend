@@ -144,3 +144,18 @@ class NegotiationResult(BaseModel):
     conversation: list[AgentMessage]
     student_id: UUID
     project_id: UUID
+
+
+# ---------------------------------------------------------------------------
+# Shared Note payload — the full bundle the frontend renders (one note view)
+# ---------------------------------------------------------------------------
+
+class SharedNotePayload(BaseModel):
+    """Everything the Shared Note UI needs for one student × project view.
+
+    Mirrors frontend/src/lib/types.ts::SharedNotePayload.
+    """
+    student: StudentProfile
+    project: LabProject
+    dossier: Dossier
+    result: NegotiationResult

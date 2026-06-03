@@ -14,6 +14,7 @@ from app.models import (
     FitAssessment,
     LabProject,
     NegotiationResult,
+    SharedNotePayload,
     StudentProfile,
 )
 from app.negotiation import run_negotiation
@@ -95,7 +96,7 @@ async def get_project(project_id: UUID, db: AsyncSession = Depends(get_db)):
 # Negotiation
 # ---------------------------------------------------------------------------
 
-@app.post("/negotiate", response_model=NegotiationResult)
+@app.post("/negotiate", response_model=SharedNotePayload)
 async def negotiate(
     student_id: UUID,
     project_id: UUID,
@@ -111,7 +112,7 @@ async def negotiate(
     student = _row_to_student(student_row)
     project = _row_to_project(project_row)
 
-    result = run_negotiation(student, project)
+    dossier, result = run_negotiation(student, project)
 
     db.add(NegotiationLogRow(
         id=result.conversation[0].id if result.conversation else None,
@@ -123,7 +124,11 @@ async def negotiate(
         conversation=[m.model_dump(mode="json") for m in result.conversation],
     ))
     await db.commit()
-    return result
+
+    # Full Shared Note payload for the frontend: { student, project, dossier, result }
+    return SharedNotePayload(
+        student=student, project=project, dossier=dossier, result=result
+    )
 
 
 @app.get("/negotiations", response_model=list[dict])

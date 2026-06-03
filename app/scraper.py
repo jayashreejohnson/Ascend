@@ -103,6 +103,15 @@ def _curated_fallback() -> list[LabProject]:
             required_skills=["Python", "CAD", "hardware", "robotics"],
             preferred_background=["Mechanical Engineering", "Biomedical Engineering"],
             source_url="https://www.csail.mit.edu/research/distributed-robotics-laboratory",
+            # Institutional links power the "Suggested Next Step" section in the UI.
+            extra_requirements={
+                "links": {
+                    "lab_website": "https://www.csail.mit.edu/",
+                    "faculty_profile": "https://danielarus.csail.mit.edu/",
+                    "project_page": "https://www.csail.mit.edu/research/robotics",
+                    "application_form": "https://urop.mit.edu/",
+                }
+            },
         ),
         LabProject(
             pi_name="Regina Barzilay",

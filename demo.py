@@ -9,8 +9,17 @@ Requires ANTHROPIC_API_KEY in .env.
 from __future__ import annotations
 
 import os
+import sys
 
 from dotenv import load_dotenv
+
+# Ensure the demo prints cleanly on Windows consoles (cp1252 chokes on em-dashes,
+# smart quotes, etc. that appear in dossier summaries and LLM agent output).
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except (AttributeError, ValueError):
+    pass
 
 load_dotenv()
 
@@ -61,11 +70,12 @@ def main():
     print(f"Project: {project.project_title} — {project.pi_name}, {project.university}")
     print()
 
-    result = run_negotiation(student, project)
+    dossier, result = run_negotiation(student, project)
 
     print("\n" + "=" * 60)
     print(f"  FINAL DECISION: {result.decision.value}")
     print(f"  Turns used: {result.turns_used}")
+    print(f"  Dossier routing: {dossier.routing.value}")
     print("=" * 60)
     print(result.justification)
 
