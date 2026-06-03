@@ -44,13 +44,47 @@ class LabProject(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Fit assessment — interface between Jayashree's logic and the loop
+# Dossier — structured fit assessment, interface between Jayashree's logic
+# and the negotiation loop
 # ---------------------------------------------------------------------------
 
-class FitAssessment(BaseModel):
-    score: float = Field(ge=0.0, le=1.0)
-    reasoning: str
-    missing_info: list[str] = []
+class DossierRouting(str, Enum):
+    CLEAR_FIT = "CLEAR_FIT"           # skip agents, auto-match
+    CLEAR_MISMATCH = "CLEAR_MISMATCH" # skip agents, auto-reject
+    AMBIGUOUS = "AMBIGUOUS"           # run full negotiation
+
+
+class DossierDimension(BaseModel):
+    """One evaluated dimension of fit (e.g. skills, trajectory, ownership)."""
+    name: str
+    evidence: list[str] = []          # pointers into student.extra_signals / skills
+    assessment: str                   # 1-2 sentence evaluation
+    confidence: float = Field(ge=0.0, le=1.0)
+    gap: str = ""                     # what's missing or unclear, if anything
+
+
+class Dossier(BaseModel):
+    """Structured fit dossier produced before agents are invoked."""
+    routing: DossierRouting
+    dimensions: list[DossierDimension] = []
+    strengths: list[str] = []         # student agent slice — what to advocate for
+    risks: list[str] = []             # professor agent slice — hard requirements / gaps
+    uncertainties: list[str] = []     # mediator slice — what's genuinely unclear
+    overall_confidence: float = Field(ge=0.0, le=1.0, default=0.5)
+    summary: str = ""                 # human-readable one-paragraph overview
+
+    # Backwards-compat alias so old code referencing .score still works
+    @property
+    def score(self) -> float:
+        return self.overall_confidence
+
+    @property
+    def missing_info(self) -> list[str]:
+        return self.uncertainties
+
+
+# Keep FitAssessment as an alias so Jayashree's stub signature is unchanged
+FitAssessment = Dossier
 
 
 # ---------------------------------------------------------------------------

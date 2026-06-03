@@ -1,10 +1,12 @@
-"""Student Agent — advocates for the student, initiates inquiry."""
+"""Student Agent — advocates for the student, initiates inquiry.
+
+Receives the STRENGTHS slice of the dossier — evidence-backed signals to surface.
+"""
 from __future__ import annotations
 
 from app.agent_runtime import register_identity, trace_event
-from app.agents.fit import evaluate_fit
 from app.llm_client import complete
-from app.models import AgentMessage, AgentRole, FitAssessment, LabProject, MessageIntent, StudentProfile
+from app.models import AgentMessage, AgentRole, Dossier, LabProject, MessageIntent, StudentProfile
 
 SYSTEM_PROMPT = """You are the Student Agent in a research-match negotiation system.
 
@@ -27,9 +29,20 @@ class StudentAgent:
         self.agent_id = register_identity(AgentRole.STUDENT)
 
     def open_inquiry(
-        self, student: StudentProfile, project: LabProject, turn: int
+        self,
+        student: StudentProfile,
+        project: LabProject,
+        turn: int,
+        dossier: Dossier | None = None,
     ) -> AgentMessage:
-        """Compose the initial inquiry message to the professor agent."""
+        """Compose the initial inquiry message to the professor agent.
+        Uses the dossier's STRENGTHS slice — the evidence-backed signals to lead with.
+        """
+        strengths_block = ""
+        if dossier and dossier.strengths:
+            strengths_block = "\nEvidence-backed strengths to advocate (from dossier):\n" + \
+                "\n".join(f"- {s}" for s in dossier.strengths)
+
         prompt = f"""
 Student profile:
 Name: {student.name} | Year: {student.year} | Field: {student.field}
@@ -38,6 +51,7 @@ Interests: {", ".join(student.interests)}
 Publications: {", ".join(student.publications) or "None"}
 Intake summary: {student.intake_summary or "Not yet provided"}
 Extra signals: {student.extra_signals}
+{strengths_block}
 
 Lab project:
 Title: {project.project_title}
@@ -47,7 +61,8 @@ Required skills: {", ".join(project.required_skills)}
 Preferred background: {", ".join(project.preferred_background)}
 
 Write a short advocacy message to the professor agent explaining why this student
-should be considered. Highlight the strongest signals, especially anything non-obvious.
+should be considered. Lead with the evidence-backed strengths above — these are the
+signals that keyword screening missed. Be specific, not generic.
 """
         reply = complete(SYSTEM_PROMPT, [{"role": "user", "content": prompt}])
         msg = AgentMessage(
@@ -67,12 +82,16 @@ should be considered. Highlight the strongest signals, especially anything non-o
         conversation_history: list[AgentMessage],
         professor_message: AgentMessage,
         turn: int,
+        dossier: Dossier | None = None,
     ) -> AgentMessage:
-        """Respond to a concern or clarification request from the professor agent."""
+        """Respond to a concern from the professor agent.
+        Uses the dossier's STRENGTHS slice to stay evidence-grounded.
+        """
         history_text = _format_history(conversation_history)
-        assessment: FitAssessment = evaluate_fit(
-            student, project, _to_chat_dicts(conversation_history)
-        )
+        strengths_block = ""
+        if dossier and dossier.strengths:
+            strengths_block = "\nDossier strengths (use as evidence):\n" + \
+                "\n".join(f"- {s}" for s in dossier.strengths)
 
         prompt = f"""
 Negotiation so far:
@@ -80,15 +99,13 @@ Negotiation so far:
 
 Professor agent's latest message:
 {professor_message.payload}
-
-Fit assessment (internal, do not quote directly):
-Score: {assessment.score:.2f} | Missing info: {assessment.missing_info}
+{strengths_block}
 
 Student profile summary:
 {student.intake_summary or _profile_summary(student)}
 
 Respond to the professor's concern. Be specific and evidence-based. Do not invent skills.
-If missing_info lists something, ask the student implicitly (i.e. surface the signal if it exists).
+Address the concern directly using the dossier strengths as your evidence base.
 """
         reply = complete(SYSTEM_PROMPT, [{"role": "user", "content": prompt}])
         msg = AgentMessage(
@@ -97,7 +114,6 @@ If missing_info lists something, ask the student implicitly (i.e. surface the si
             intent=MessageIntent.RESPOND,
             payload=reply,
             turn=turn,
-            fit_assessment=assessment,
         )
         trace_event(self.agent_id, msg)
         return msg
@@ -105,10 +121,6 @@ If missing_info lists something, ask the student implicitly (i.e. surface the si
 
 def _format_history(msgs: list[AgentMessage]) -> str:
     return "\n".join(f"[Turn {m.turn}] {m.from_agent.value}: {m.payload}" for m in msgs)
-
-
-def _to_chat_dicts(msgs: list[AgentMessage]) -> list[dict]:
-    return [{"role": m.from_agent.value, "content": m.payload} for m in msgs]
 
 
 def _profile_summary(s: StudentProfile) -> str:

@@ -1,10 +1,12 @@
-"""Professor Agent — screens candidates on behalf of the lab/PI."""
+"""Professor Agent — screens candidates on behalf of the lab/PI.
+
+Receives the RISKS slice of the dossier — hard requirements and identified gaps.
+"""
 from __future__ import annotations
 
 from app.agent_runtime import register_identity, trace_event
-from app.agents.fit import evaluate_fit
 from app.llm_client import complete
-from app.models import AgentMessage, AgentRole, LabProject, MessageIntent, StudentProfile
+from app.models import AgentMessage, AgentRole, Dossier, LabProject, MessageIntent, StudentProfile
 
 SYSTEM_PROMPT = """You are the Professor Agent in a research-match negotiation system.
 
@@ -32,12 +34,20 @@ class ProfessorAgent:
         conversation_history: list[AgentMessage],
         student_message: AgentMessage,
         turn: int,
+        dossier: Dossier | None = None,
     ) -> AgentMessage:
-        """Evaluate the student agent's message and respond."""
+        """Evaluate the student agent's message.
+        Uses the dossier's RISKS slice — hard requirements and identified gaps.
+        """
         history_text = _format_history(conversation_history)
-        assessment = evaluate_fit(
-            student, project, _to_chat_dicts(conversation_history)
-        )
+        risks_block = ""
+        if dossier and dossier.risks:
+            risks_block = "\nDossier risks / requirement gaps (enforce these):\n" + \
+                "\n".join(f"- {r}" for r in dossier.risks)
+        uncertainties_block = ""
+        if dossier and dossier.uncertainties:
+            uncertainties_block = "\nOpen uncertainties (probe these):\n" + \
+                "\n".join(f"- {u}" for u in dossier.uncertainties)
 
         prompt = f"""
 Lab project:
@@ -51,23 +61,21 @@ Negotiation so far:
 
 Student agent's latest message:
 {student_message.payload}
-
-Fit assessment (internal):
-Score: {assessment.score:.2f} | Missing info: {assessment.missing_info}
+{risks_block}
+{uncertainties_block}
 
 Respond as the professor agent. If the fit looks strong, say so and explain why.
 If there are gaps, name the most important one and ask one focused question.
 If the student is clearly not a fit, be direct but fair.
 """
         reply = complete(SYSTEM_PROMPT, [{"role": "user", "content": prompt}])
-        intent = MessageIntent.CLARIFY if assessment.missing_info else MessageIntent.SCREEN
+        intent = MessageIntent.CLARIFY if (dossier and dossier.uncertainties) else MessageIntent.SCREEN
         msg = AgentMessage(
             from_agent=AgentRole.PROFESSOR,
             to_agent=AgentRole.STUDENT,
             intent=intent,
             payload=reply,
             turn=turn,
-            fit_assessment=assessment,
         )
         trace_event(self.agent_id, msg)
         return msg
@@ -75,7 +83,3 @@ If the student is clearly not a fit, be direct but fair.
 
 def _format_history(msgs: list[AgentMessage]) -> str:
     return "\n".join(f"[Turn {m.turn}] {m.from_agent.value}: {m.payload}" for m in msgs)
-
-
-def _to_chat_dicts(msgs: list[AgentMessage]) -> list[dict]:
-    return [{"role": m.from_agent.value, "content": m.payload} for m in msgs]
