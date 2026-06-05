@@ -256,16 +256,15 @@ Built together for **NY Tech Week — AI Agents: From Prototype to Production** 
 
 - Product architecture and the dossier-first thesis
 - Dossier design and the routing framework (`CLEAR_FIT` / `CLEAR_MISMATCH` / `AMBIGUOUS`)
-- Frontend — onboarding flow, student/professor dashboards, matching UI
-- Supabase data model and Vercel deployment
+- Early signal-discovery UI and Vercel deployment
 
-### Victoria Zhao
+### Salwa Shuman · [@SalwaTheEngineer](https://github.com/SalwaTheEngineer)
+
+- Built the deployed application end to end — the Next.js + Supabase matching platform: `.edu` auth, student/professor dashboards, onboarding flows, and the `match` / `apply` / `opportunities` / `profile` API routes
+
+### Victoria Zhao · [@znvictoriazhao](https://github.com/znvictoriazhao)
 
 - Evidence-scoring logic, designed alongside Jayashree — the rules that decide when a student–project pair is a clear fit, a clear mismatch, or ambiguous enough to need the agents
-
-### Salwa Shuman
-
-- UI design — making a dense, evidence-driven matching flow legible end to end
 
 ### Shageenth Sandrakumar · [@shageenthsandrakumar](https://github.com/shageenthsandrakumar)
 
