@@ -1,4 +1,6 @@
-# OfficeHours
+# Ascend
+
+*Product name: **Ascend**. Repository: `OfficeHours`.*
 
 **Evidence-first opportunity coordination. Multi-agent negotiation only when fit is ambiguous.**
 
@@ -30,7 +32,7 @@ Campus opportunities fail at **coordination**, not because people or projects do
 - Students are filtered out by **keywords and credentials** before a PI sees real evidence.
 - Labs need a **pair-level** answer: does *this* person fit *this* opportunity *now*?
 
-OfficeHours answers that question in two layers: a **dossier** (transparent rules) and an **agent hearing** (only when the dossier says uncertainty remains).
+Ascend answers that question in two layers: a **dossier** (transparent rules) and an **agent hearing** (only when the dossier says uncertainty remains).
 
 ---
 
