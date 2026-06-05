@@ -48,18 +48,32 @@ Before any agent runs, `evaluate_fit(student, project)` returns a **`Dossier`**.
 
 ### 2. Routing
 
-```mermaid
-flowchart TD
-    A[Student + lab project] --> B["evaluate_fit() returns Dossier"]
-    B --> C{routing}
-    C -->|CLEAR_FIT| D["MATCH · 0 agent turns"]
-    C -->|CLEAR_MISMATCH| E["NO_MATCH · 0 agent turns"]
-    C -->|AMBIGUOUS| F[Student Agent]
-    F --> G[Professor Agent]
-    G --> H[Mediator Agent]
-    H --> I{decision}
-    I -->|MATCH or NO_MATCH| J[Done · logged via API]
-    I -->|NEEDS_INFO| F
+```
+Student + lab project
+        |
+        v
+  evaluate_fit() returns Dossier
+        |
+   routing?
+        |
+  +-----+----------------+------------------+
+  |                      |                  |
+CLEAR_FIT           CLEAR_MISMATCH      AMBIGUOUS
+  |                      |                  |
+MATCH                 NO_MATCH        Student Agent
+(0 agent turns)    (0 agent turns)         |
+                                      Professor Agent
+                                           |
+                                      Mediator Agent
+                                           |
+                                       decision?
+                                           |
+                          +----------------+----------------+
+                          |                                 |
+                   MATCH / NO_MATCH                     NEEDS_INFO
+                          |                                 |
+                  done (logged via API)        back to Student Agent
+                                               (up to 6 turns, then forced)
 ```
 
 | Routing | When | Agents run? | Result |
