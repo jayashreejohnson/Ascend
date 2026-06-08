@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/research_match"
 
     # negotiation
-    max_turns: int = 6
+    max_turns: int = 5
     default_model: str = "claude-sonnet-4-6"
 
 

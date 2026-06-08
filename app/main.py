@@ -1,15 +1,18 @@
 """FastAPI application."""
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.db_models import LabProjectRow, NegotiationLogRow, StudentRow
+from app.integration import NegotiateStreamRequest, map_project, map_student
 from app.models import (
     FitAssessment,
     LabProject,
@@ -17,7 +20,7 @@ from app.models import (
     SharedNotePayload,
     StudentProfile,
 )
-from app.negotiation import run_negotiation
+from app.negotiation import run_negotiation, stream_negotiation
 
 app = FastAPI(title="Research Match", version="0.1.0")
 
@@ -128,6 +131,37 @@ async def negotiate(
     # Full Shared Note payload for the frontend: { student, project, dossier, result }
     return SharedNotePayload(
         student=student, project=project, dossier=dossier, result=result
+    )
+
+
+@app.post("/negotiate/stream")
+async def negotiate_stream(req: NegotiateStreamRequest):
+    """Live negotiation as Server-Sent Events for the 'Why this match?' modal.
+
+    Accepts Supabase-shaped student + opportunity (mapped to the agent models),
+    runs the dossier + agent negotiation, and streams each event as it happens:
+        event: dossier   data: {...Dossier...}
+        event: turn      data: {...AgentMessage...}
+        event: decision  data: {...NegotiationResult...}
+        event: done      data: {}
+    """
+    student = map_student(req.student)
+    project = map_project(req.opportunity)
+
+    def event_stream():
+        try:
+            for event_type, payload in stream_negotiation(student, project):
+                data = payload.model_dump(mode="json")
+                yield f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+        except Exception as exc:  # surface engine errors to the client instead of hanging
+            yield f"event: error\ndata: {json.dumps({'message': str(exc)})}\n\n"
+        finally:
+            yield "event: done\ndata: {}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

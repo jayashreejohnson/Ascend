@@ -32,13 +32,18 @@ the negotiation transcript — do not make generic statements. Name what resolve
 uncertainty (for MATCH/NO_MATCH) or what specific information is still needed (for NEEDS_INFO).
 
 Rules:
-- MATCH: The negotiation resolved enough uncertainty to confirm fit.
-- NO_MATCH: The negotiation revealed a clear and unresolvable mismatch.
-- NEEDS_INFO: A specific gap remains that, if clarified, could change the outcome.
-  Only use NEEDS_INFO if genuinely undecidable. Do not use it to delay.
-  NEEDS_INFO is not available once the turn cap is reached.
+- MATCH: the transcript contains real, stated evidence that the student meets the bar.
+  Actual skills or experience in the profile, not speculation and not "probably."
+- NEEDS_INFO: the student may well fit, but the profile does not contain enough evidence
+  to confirm it. Name exactly what additional information would settle it. PREFER
+  NEEDS_INFO over NO_MATCH whenever the problem is MISSING information rather than a
+  proven mismatch. This is the honest outcome for a thin profile.
+- NO_MATCH: the transcript shows a genuine, evidence-based mismatch — a real requirement
+  the student demonstrably does not meet, with no compensating evidence.
 
-No fabricated matches. Your justification must be inspectable.
+Never credit a claim the professor showed was unsupported, and never reward "probably
+has it" reasoning. If the student conceded a point, treat it as unproven. No fabricated
+matches. Your justification must be inspectable.
 """
 
 
@@ -71,12 +76,12 @@ Full negotiation transcript:
 {uncertainties_block}
 {summary_block}
 
-{'IMPORTANT: The turn cap has been reached. You MUST issue MATCH or NO_MATCH. NEEDS_INFO is not allowed.' if force_terminal else ''}
+{'IMPORTANT: This is the final turn. Give your terminal decision now. MATCH if the evidence confirms fit, NO_MATCH if there is a clear mismatch, or NEEDS_INFO if the case is simply unproven because key evidence is missing from the profile (name what is missing).' if force_terminal else ''}
 
 Issue your decision now. Cite specific evidence from the transcript in your justification.
 """
         reply = complete(SYSTEM_PROMPT, [{"role": "user", "content": prompt}], max_tokens=512)
-        decision = _parse_decision(reply, force_terminal)
+        decision = _parse_decision(reply)
 
         msg = AgentMessage(
             from_agent=AgentRole.MEDIATOR,
@@ -90,19 +95,25 @@ Issue your decision now. Cite specific evidence from the transcript in your just
         return msg, decision
 
 
-def _parse_decision(text: str, force_terminal: bool) -> NegotiationDecision:
+def _parse_decision(text: str) -> NegotiationDecision:
+    """Parse the mediator's decision. NEEDS_INFO is a valid terminal outcome
+    (thin-evidence case), so it is never force-converted to NO_MATCH."""
     upper = text.upper()
-    if "DECISION: MATCH" in upper and "NO_MATCH" not in upper:
-        return NegotiationDecision.MATCH
+    # Check NO_MATCH before MATCH, since "DECISION: NO_MATCH" contains "MATCH".
     if "DECISION: NO_MATCH" in upper:
         return NegotiationDecision.NO_MATCH
-    if "DECISION: NEEDS_INFO" in upper and not force_terminal:
+    if "DECISION: NEEDS_INFO" in upper:
         return NegotiationDecision.NEEDS_INFO
+    if "DECISION: MATCH" in upper:
+        return NegotiationDecision.MATCH
+    # Loose fallbacks if the model drifted from the format.
     if "NO_MATCH" in upper:
         return NegotiationDecision.NO_MATCH
-    if force_terminal:
-        return NegotiationDecision.NO_MATCH
-    return NegotiationDecision.NEEDS_INFO
+    if "NEEDS_INFO" in upper:
+        return NegotiationDecision.NEEDS_INFO
+    if "MATCH" in upper:
+        return NegotiationDecision.MATCH
+    return NegotiationDecision.NEEDS_INFO  # safest honest default: inconclusive
 
 
 def _format_history(msgs: list[AgentMessage]) -> str:
