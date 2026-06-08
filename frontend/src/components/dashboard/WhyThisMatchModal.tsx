@@ -15,6 +15,7 @@ type DossierLite = {
   uncertainties?: string[];
 };
 type Phase = "running" | "replaying" | "done" | "error";
+type Gate = "none" | "ask" | "no" | "yesForm";
 
 const ROUTING_LABEL: Record<string, string> = {
   CLEAR_FIT: "Clear fit",
@@ -64,17 +65,138 @@ export function WhyThisMatchModal({
   const [decision, setDecision] = useState<string | null>(null);
   const [justification, setJustification] = useState("");
   const [error, setError] = useState("");
+
+  // NEEDS_INFO loop state
+  const [gate, setGate] = useState<Gate>("none");
+  const [evidence, setEvidence] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const bioRef = useRef<string>(student.bio ?? "");
   const scrollRef = useRef<HTMLDivElement>(null);
   const started = useRef(false);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [turns, decision]);
+  }, [turns, decision, gate]);
+
+  function buildBody(bio: string) {
+    return {
+      student: {
+        major: student.major,
+        year: student.year,
+        topics: student.topics,
+        gpa_range: student.gpa_range,
+        hours_per_week: student.hours_per_week,
+        bio,
+        university: student.university,
+      },
+      opportunity: {
+        title: opportunity.title,
+        description: opportunity.description,
+        topics: opportunity.topics,
+        opportunity_type: opportunity.opportunity_type,
+        gpa_min: opportunity.gpa_min,
+        hours_per_week: opportunity.hours_per_week,
+        pi_name: opportunity.professor?.name,
+        department: opportunity.professor?.department,
+        university: opportunity.professor?.university,
+      },
+    };
+  }
+
+  const streamLive = useCallback(
+    async (bio: string) => {
+      // reset for a fresh (or re-) run
+      setTurns([]);
+      setDossier(null);
+      setDecision(null);
+      setJustification("");
+      setError("");
+      setGate("none");
+      setPhase("running");
+
+      const supabase = createClient();
+      let res: Response;
+      try {
+        res = await fetch(`${AGENT_API}/negotiate/stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(buildBody(bio)),
+        });
+      } catch {
+        setError("Could not reach the reasoning engine.");
+        setPhase("error");
+        return;
+      }
+      if (!res.ok || !res.body) {
+        setError("The reasoning engine returned an error.");
+        setPhase("error");
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      const collected: Turn[] = [];
+      let doss: DossierLite | null = null;
+      let finalDecision: string | null = null;
+      let finalJust = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop() ?? "";
+        for (const frame of frames) {
+          const ev = parseSSE(frame);
+          if (!ev) continue;
+          if (ev.event === "dossier") {
+            doss = ev.data;
+            setDossier(ev.data);
+          } else if (ev.event === "turn") {
+            collected.push({
+              from_agent: ev.data.from_agent,
+              payload: ev.data.payload,
+              turn: ev.data.turn,
+              intent: ev.data.intent,
+            });
+            setTurns([...collected]);
+          } else if (ev.event === "decision") {
+            finalDecision = ev.data.decision;
+            finalJust = ev.data.justification;
+            setDecision(finalDecision);
+            setJustification(finalJust);
+          } else if (ev.event === "error") {
+            setError(ev.data?.message ?? "The negotiation failed.");
+            setPhase("error");
+            return;
+          }
+        }
+      }
+      setPhase("done");
+      if (finalDecision === "NEEDS_INFO") setGate("ask");
+
+      if (doss && finalDecision) {
+        await supabase.from("negotiations").upsert(
+          {
+            student_id: student.id,
+            opportunity_id: opportunity.id,
+            routing: doss.routing,
+            decision: finalDecision,
+            justification: finalJust,
+            dossier: doss,
+            transcript: collected,
+          },
+          { onConflict: "student_id,opportunity_id" }
+        );
+      }
+    },
+    [student, opportunity]
+  );
 
   const run = useCallback(async () => {
     const supabase = createClient();
-
-    // 1. Cache hit -> replay the stored transcript with a live-typing feel.
     const { data: cached } = await supabase
       .from("negotiations")
       .select("*")
@@ -93,116 +215,17 @@ export function WhyThisMatchModal({
       setDecision(cached.decision as string);
       setJustification((cached.justification as string) ?? "");
       setPhase("done");
+      if (cached.decision === "NEEDS_INFO") setGate("ask");
       return;
     }
 
-    // 2. Cache miss -> stream a live negotiation from the agent backend.
     if (!AGENT_API) {
       setError("Reasoning engine URL is not configured.");
       setPhase("error");
       return;
     }
-
-    const body = {
-      student: {
-        major: student.major,
-        year: student.year,
-        topics: student.topics,
-        gpa_range: student.gpa_range,
-        hours_per_week: student.hours_per_week,
-        bio: student.bio,
-        university: student.university,
-      },
-      opportunity: {
-        title: opportunity.title,
-        description: opportunity.description,
-        topics: opportunity.topics,
-        opportunity_type: opportunity.opportunity_type,
-        gpa_min: opportunity.gpa_min,
-        hours_per_week: opportunity.hours_per_week,
-        pi_name: opportunity.professor?.name,
-        department: opportunity.professor?.department,
-        university: opportunity.professor?.university,
-      },
-    };
-
-    let res: Response;
-    try {
-      res = await fetch(`${AGENT_API}/negotiate/stream`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-    } catch {
-      setError("Could not reach the reasoning engine.");
-      setPhase("error");
-      return;
-    }
-    if (!res.ok || !res.body) {
-      setError("The reasoning engine returned an error.");
-      setPhase("error");
-      return;
-    }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    const collected: Turn[] = [];
-    let doss: DossierLite | null = null;
-    let finalDecision: string | null = null;
-    let finalJust = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const frames = buffer.split("\n\n");
-      buffer = frames.pop() ?? "";
-      for (const frame of frames) {
-        const ev = parseSSE(frame);
-        if (!ev) continue;
-        if (ev.event === "dossier") {
-          doss = ev.data;
-          setDossier(ev.data);
-        } else if (ev.event === "turn") {
-          const t: Turn = {
-            from_agent: ev.data.from_agent,
-            payload: ev.data.payload,
-            turn: ev.data.turn,
-            intent: ev.data.intent,
-          };
-          collected.push(t);
-          setTurns([...collected]);
-        } else if (ev.event === "decision") {
-          finalDecision = ev.data.decision;
-          finalJust = ev.data.justification;
-          setDecision(finalDecision);
-          setJustification(finalJust);
-        } else if (ev.event === "error") {
-          setError(ev.data?.message ?? "The negotiation failed.");
-          setPhase("error");
-          return;
-        }
-      }
-    }
-    setPhase("done");
-
-    // Populate the cache so the next viewer replays instantly.
-    if (doss && finalDecision) {
-      await supabase.from("negotiations").upsert(
-        {
-          student_id: student.id,
-          opportunity_id: opportunity.id,
-          routing: doss.routing,
-          decision: finalDecision,
-          justification: finalJust,
-          dossier: doss,
-          transcript: collected,
-        },
-        { onConflict: "student_id,opportunity_id" }
-      );
-    }
-  }, [student, opportunity]);
+    await streamLive(bioRef.current);
+  }, [student, opportunity, streamLive]);
 
   useEffect(() => {
     if (started.current) return;
@@ -216,13 +239,46 @@ export function WhyThisMatchModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // "No, not my background" -> instant honest NO_MATCH (no agents re-run)
+  async function handleNo() {
+    const just =
+      "The student indicated this required skill set is not part of their background, so this is not the right fit for now.";
+    setDecision("NO_MATCH");
+    setJustification(just);
+    setGate("no");
+    const supabase = createClient();
+    await supabase.from("negotiations").upsert(
+      {
+        student_id: student.id,
+        opportunity_id: opportunity.id,
+        routing: dossier?.routing ?? "AMBIGUOUS",
+        decision: "NO_MATCH",
+        justification: just,
+        dossier: dossier ?? {},
+        transcript: turns,
+      },
+      { onConflict: "student_id,opportunity_id" }
+    );
+  }
+
+  // "Yes" -> append real evidence to the bio, persist, re-run the negotiation
+  async function handleYesSubmit() {
+    if (!evidence.trim() || saving) return;
+    setSaving(true);
+    const newBio = `${bioRef.current}\n${evidence.trim()}`.trim();
+    bioRef.current = newBio;
+    const supabase = createClient();
+    await supabase.from("student_profiles").update({ bio: newBio }).eq("id", student.id);
+    setEvidence("");
+    setSaving(false);
+    await streamLive(newBio);
+  }
+
   const busy = phase === "running" || phase === "replaying";
+  const gaps = dossier?.skill_gaps ?? [];
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
         className="flex max-h-[88vh] w-full max-w-[680px] flex-col overflow-hidden rounded-[14px] border border-ascend-border bg-ascend-bg shadow-xl"
         style={{ borderWidth: "0.5px" }}
@@ -236,18 +292,13 @@ export function WhyThisMatchModal({
               {opportunity.title} · {opportunity.professor?.name}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-md px-2 py-1 text-ascend-muted hover:text-ascend-text"
-            aria-label="Close"
-          >
+          <button onClick={onClose} className="rounded-md px-2 py-1 text-ascend-muted hover:text-ascend-text" aria-label="Close">
             ✕
           </button>
         </div>
 
         {/* Body */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5">
-          {/* Dossier strip */}
           {dossier && (
             <div className="ascend-card mb-5">
               <div className="flex items-center justify-between">
@@ -259,45 +310,30 @@ export function WhyThisMatchModal({
                   {ROUTING_LABEL[dossier.routing] ?? dossier.routing}
                 </span>
               </div>
-              {dossier.summary && (
-                <p className="mt-2 text-sm text-ascend-text">{dossier.summary}</p>
-              )}
+              {dossier.summary && <p className="mt-2 text-sm text-ascend-text">{dossier.summary}</p>}
               {dossier.routing !== "AMBIGUOUS" && (
-                <p className="mt-2 text-xs text-ascend-muted">
-                  The rules resolved this without needing the agents.
-                </p>
+                <p className="mt-2 text-xs text-ascend-muted">The rules resolved this without needing the agents.</p>
               )}
             </div>
           )}
 
-          {/* Agent turns */}
           <div className="space-y-3">
             {turns.map((t, i) => {
               const meta = AGENT_META[t.from_agent] ?? AGENT_META.mediator;
               const isRight = meta.align === "right";
               const isCenter = meta.align === "center";
               return (
-                <div
-                  key={i}
-                  className={`flex ${isCenter ? "justify-center" : isRight ? "justify-end" : "justify-start"}`}
-                >
+                <div key={i} className={`flex ${isCenter ? "justify-center" : isRight ? "justify-end" : "justify-start"}`}>
                   <div
                     className={`max-w-[88%] rounded-[12px] border bg-ascend-card p-3.5 ${isCenter ? "w-full" : ""}`}
                     style={{ borderColor: "var(--ascend-border)", borderWidth: "0.5px" }}
                   >
                     <div className="mb-1 flex items-center gap-2">
-                      <span
-                        className="inline-block h-2 w-2 rounded-full"
-                        style={{ background: meta.accent }}
-                      />
-                      <span className="text-xs font-semibold" style={{ color: meta.accent }}>
-                        {meta.name}
-                      </span>
+                      <span className="inline-block h-2 w-2 rounded-full" style={{ background: meta.accent }} />
+                      <span className="text-xs font-semibold" style={{ color: meta.accent }}>{meta.name}</span>
                       <span className="label-text">{meta.role}</span>
                     </div>
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-ascend-text">
-                      {t.payload}
-                    </p>
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-ascend-text">{t.payload}</p>
                   </div>
                 </div>
               );
@@ -326,17 +362,77 @@ export function WhyThisMatchModal({
             </div>
           )}
 
-          {phase === "error" && (
-            <div className="ascend-card mt-4 text-sm text-ascend-destructive">{error}</div>
+          {/* NEEDS_INFO gate */}
+          {gate === "ask" && (
+            <div className="ascend-card mt-4">
+              <p className="text-sm font-medium text-ascend-text">
+                The agents could not confirm
+                {gaps.length > 0 ? <>: <span className="font-semibold">{gaps.join(", ")}</span></> : " a required skill"}.
+                Do you have real experience with {gaps.length === 1 ? "it" : "these"}?
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  onClick={() => setGate("yesForm")}
+                  className="rounded-md bg-ascend-primary px-3 py-2 text-sm text-white hover:bg-ascend-primary-dark"
+                >
+                  Yes, I can eventually show it
+                </button>
+                <button
+                  onClick={handleNo}
+                  className="rounded-md border border-ascend-border px-3 py-2 text-sm text-ascend-text hover:bg-ascend-card-hover"
+                  style={{ borderWidth: "0.5px" }}
+                >
+                  No, this is not part of my background
+                </button>
+              </div>
+              <p className="mt-2 text-[11px] text-ascend-muted">
+                Choosing “No” marks this opportunity as not the right fit for now.
+              </p>
+            </div>
           )}
+
+          {/* Evidence form */}
+          {gate === "yesForm" && (
+            <div className="ascend-card mt-4">
+              <p className="text-sm font-medium text-ascend-text">Add the evidence the agents asked for</p>
+              <p className="mt-1 text-xs text-ascend-muted">
+                Name the real experience — a CAD tool you used, a Python project, a script. Add only what is true;
+                the agents reason only over real evidence, so inventing something just produces a false answer.
+              </p>
+              <textarea
+                value={evidence}
+                onChange={(e) => setEvidence(e.target.value)}
+                rows={4}
+                className="ascend-input mt-3"
+                placeholder="e.g. I designed the arm parts in Fusion 360 and wrote the motion control in Python."
+              />
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={handleYesSubmit}
+                  disabled={!evidence.trim() || saving}
+                  className="rounded-md bg-ascend-primary px-3 py-2 text-sm text-white hover:bg-ascend-primary-dark disabled:opacity-50"
+                >
+                  {saving ? "Adding…" : "Add evidence & re-run"}
+                </button>
+                <button
+                  onClick={() => setGate("ask")}
+                  className="rounded-md px-3 py-2 text-sm text-ascend-muted hover:text-ascend-text"
+                >
+                  Back
+                </button>
+              </div>
+            </div>
+          )}
+
+          {phase === "error" && <div className="ascend-card mt-4 text-sm text-ascend-destructive">{error}</div>}
         </div>
 
         {/* Disclaimer footer */}
         <div className="border-t border-ascend-border/70 bg-ascend-card px-6 py-3">
           <p className="text-[11px] leading-relaxed text-ascend-muted">
-            The agents reason only over the evidence in the profile and never invent
-            qualifications. More detail in a profile leads to a stronger, fairer read.
-            This is a recommendation to start a conversation, not a hiring decision.
+            The agents reason only over the evidence in the profile and never invent qualifications. More detail in a
+            profile leads to a stronger, fairer read. This is a recommendation to start a conversation, not a hiring
+            decision.
           </p>
         </div>
       </div>
