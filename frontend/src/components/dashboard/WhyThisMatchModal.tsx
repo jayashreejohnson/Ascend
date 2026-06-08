@@ -261,17 +261,16 @@ export function WhyThisMatchModal({
     );
   }
 
-  // "Yes" -> append real evidence to the bio, persist, re-run the negotiation
+  // "Yes" -> save the edited submission (replaces bio), persist, re-run the negotiation
   async function handleYesSubmit() {
-    if (!evidence.trim() || saving) return;
+    const edited = evidence.trim();
+    if (!edited || saving) return;
     setSaving(true);
-    const newBio = `${bioRef.current}\n${evidence.trim()}`.trim();
-    bioRef.current = newBio;
+    bioRef.current = edited;
     const supabase = createClient();
-    await supabase.from("student_profiles").update({ bio: newBio }).eq("id", student.id);
-    setEvidence("");
+    await supabase.from("student_profiles").update({ bio: edited }).eq("id", student.id);
     setSaving(false);
-    await streamLive(newBio);
+    await streamLive(edited);
   }
 
   const busy = phase === "running" || phase === "replaying";
@@ -372,7 +371,10 @@ export function WhyThisMatchModal({
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
-                  onClick={() => setGate("yesForm")}
+                  onClick={() => {
+                    setEvidence(bioRef.current);
+                    setGate("yesForm");
+                  }}
                   className="rounded-md bg-ascend-primary px-3 py-2 text-sm text-white hover:bg-ascend-primary-dark"
                 >
                   Yes, I can eventually show it
@@ -391,20 +393,21 @@ export function WhyThisMatchModal({
             </div>
           )}
 
-          {/* Evidence form */}
+          {/* Evidence form — edit the original submission in place */}
           {gate === "yesForm" && (
             <div className="ascend-card mt-4">
-              <p className="text-sm font-medium text-ascend-text">Add the evidence the agents asked for</p>
+              <p className="text-sm font-medium text-ascend-text">Review and update your submission</p>
               <p className="mt-1 text-xs text-ascend-muted">
-                Name the real experience — a CAD tool you used, a Python project, a script. Add only what is true;
-                the agents reason only over real evidence, so inventing something just produces a false answer.
+                This is what you submitted. Edit it to add the real experience the agents asked for
+                {gaps.length > 0 ? <> — {gaps.join(", ")}</> : ""}. Add only what is true; the agents reason only over
+                real evidence, so inventing something just produces a false answer.
               </p>
               <textarea
                 value={evidence}
                 onChange={(e) => setEvidence(e.target.value)}
-                rows={4}
+                rows={7}
                 className="ascend-input mt-3"
-                placeholder="e.g. I designed the arm parts in Fusion 360 and wrote the motion control in Python."
+                placeholder="Describe your real experience — e.g. tools you used, projects you built, code you wrote."
               />
               <div className="mt-3 flex gap-2">
                 <button
@@ -412,7 +415,7 @@ export function WhyThisMatchModal({
                   disabled={!evidence.trim() || saving}
                   className="rounded-md bg-ascend-primary px-3 py-2 text-sm text-white hover:bg-ascend-primary-dark disabled:opacity-50"
                 >
-                  {saving ? "Adding…" : "Add evidence & re-run"}
+                  {saving ? "Saving…" : "Save & re-run"}
                 </button>
                 <button
                   onClick={() => setGate("ask")}
