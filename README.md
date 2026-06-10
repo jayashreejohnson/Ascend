@@ -270,6 +270,7 @@ Built together for **NY Tech Week, AI Agents: From Prototype to Production** (NY
 
 - Product architecture and the dossier-first thesis
 - Dossier design and the routing framework (`CLEAR_FIT` / `CLEAR_MISMATCH` / `AMBIGUOUS`)
+- Backend architecture: FastAPI, the three agent modules, and the negotiation loop
 - Early signal-discovery UI and Vercel deployment
 
 ### Salwa Shuman · [@SalwaTheEngineer](https://github.com/SalwaTheEngineer)
@@ -282,7 +283,6 @@ Built together for **NY Tech Week, AI Agents: From Prototype to Production** (NY
 
 ### Shageenth Sandrakumar · [@shageenthsandrakumar](https://github.com/shageenthsandrakumar)
 
-- Backend architecture: FastAPI, the three agent modules, and the negotiation loop
 - `evaluate_fit` rules engine and the `Dossier` model
 - PostgreSQL / SQLAlchemy async; remote-DB (Railway) SSL
 - Sponsor integration: GMI provider routing in `llm_client.py`, Phinite observability hooks
